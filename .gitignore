@@ -1,0 +1,22 @@
+# Secrets, never commit these
+.env
+API_KEY_EMAIL/
+
+# Python environment and cache
+.venv/
+__pycache__/
+*.pyc
+
+# Claude Code local project settings
+.claude/
+
+# Generated data and reports, everyone regenerates their own by running the
+# scripts, a stale snapshot in the repo would just be confusing
+packet.json
+.ff_calendar_cache.json
+REPORT.md
+claude_view.md
+codex_view.md
+STAGE2_RIDER_REPORT.md
+FINVIZ_SECTOR_SCAN_REPORT.md
+reports/

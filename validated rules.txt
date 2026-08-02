@@ -1,0 +1,20 @@
+I'm building an AI premarket stock analyst pipeline. Before the scanner, write a spec file called WATCHLIST_CRITERIA.md that captures my two validated watchlist setups. These rules are the source of truth the scanner will encode.
+
+DAY TRADING WATCHLIST, "Trend Join Long" (backtest: 54.6% win rate, profit factor 1.59, 280 trades). Premarket selection, all required:
+- Gap % vs prev close > 3%
+- Price > $3
+- Market cap > $1B
+- Premarket relative volume (RVOL) > 1.5
+- Price breaking above yesterday's high
+Intraday plan: window 10:00am to 3:30pm ET; trigger price > premarket high AND > prior high-of-day; stop 1% below premarket high or LOD (whichever is lower) = 1R; scale 1/3 at +1R, 1/3 at +2R, trail the last 1/3 on the 21-EMA; flat by 3:51pm.
+
+SWING WATCHLIST (backtest: 57.6% win rate / PF 5.34 on news catalysts, 44.7% / PF 2.57 on earnings catalysts). Premarket selection, all required:
+- Gap % >= 8%
+- Price > $3
+- Open > yesterday's high
+- Open > 200-day SMA
+- Market cap >= $800M
+- A real catalyst (earnings on the gap day, or news with no earnings)
+Note that swing entry and exit management is still being built, so swing entries are starter ideas only, no fake stops or targets.
+
+Keep it tight and readable, use my casual Humbled Trader voice, and do not use em dashes anywhere.
