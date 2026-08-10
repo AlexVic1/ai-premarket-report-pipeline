@@ -1,12 +1,22 @@
 """
 render_report.py
 
-Renders a Markdown premarket report into a clean, readable standalone HTML page.
+Renders Markdown premarket report(s) into a clean, readable standalone HTML page.
 
 Usage:
     python render_report.py REPORT.md [YYYY-MM-DD]
+    python render_report.py REPORT.md STAGE2_RIDER_REPORT.md FINVIZ_SECTOR_SCAN_REPORT.md [YYYY-MM-DD]
 
-If the date isn't given, today's date is used. Writes to reports/premarket_<date>.html
+One markdown file makes one page, same as always. Multiple markdown files get
+combined into a single HTML page instead, each report as its own section with
+a divider between them, one shared header and footer. This is what makes a
+"one email, all reports readable inline" delivery possible, since a single
+combined HTML document is exactly the same kind of thing deliver.py already
+knows how to send as a normal email body, no attachments needed.
+
+If the date isn't given, today's date is used. Single file writes to
+reports/<name>_<date>.html, multiple files write to
+reports/premarket_reports_<date>.html
 """
 
 import os
@@ -173,6 +183,23 @@ body {
     text-align: center;
 }
 
+.report-section + .report-section {
+    margin-top: 40px;
+}
+
+.section-title {
+    margin: 0 0 6px 0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.section-break {
+    border: none;
+    border-top: 3px solid var(--accent);
+    margin: 40px 0 28px;
+}
+
 @media (max-width: 640px) {
     .page {
         padding: 24px 20px;
@@ -232,6 +259,53 @@ Generated {generated_str} &middot; Built by Claude + Codex &middot; Educational 
 """
 
 
+def build_combined_html(md_paths, date_str, generated_str):
+    sections = []
+    titles = []
+    for i, md_path in enumerate(md_paths):
+        with open(md_path, "r", encoding="utf-8") as f:
+            md_text = f.read()
+        title, body_md = split_title(md_text)
+        titles.append(title)
+        body_html = markdown.markdown(
+            body_md,
+            extensions=["tables", "fenced_code", "sane_lists"],
+        )
+        divider = '<hr class="section-break" />' if i > 0 else ""
+        sections.append(
+            f'{divider}<section class="report-section">'
+            f'<h1 class="section-title">{title}</h1>'
+            f"{body_html}"
+            f"</section>"
+        )
+
+    page_title = f"AI Premarket Reports ({len(md_paths)})"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{page_title}</title>
+<style>{CSS}</style>
+</head>
+<body>
+<div class="page">
+<header class="report-header">
+<h1>{page_title}</h1>
+<div class="report-date">{date_str}</div>
+</header>
+<main class="report-body">
+{"".join(sections)}
+</main>
+<footer class="report-footer">
+Generated {generated_str} &middot; Built by Claude + Codex &middot; Educational only, not financial advice
+</footer>
+</div>
+</body>
+</html>
+"""
+
+
 def output_prefix(md_path):
     """Name the output file after its source, so different reports don't collide.
 
@@ -245,34 +319,44 @@ def output_prefix(md_path):
     return slug or "report"
 
 
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python render_report.py REPORT.md [YYYY-MM-DD]")
+    args = sys.argv[1:]
+    if not args:
+        print("Usage: python render_report.py REPORT.md [more.md ...] [YYYY-MM-DD]")
         sys.exit(1)
 
-    md_path = sys.argv[1]
-    if not os.path.exists(md_path):
-        print(f"File not found: {md_path}")
-        sys.exit(1)
-
-    if len(sys.argv) >= 3:
-        date_str = sys.argv[2]
-        try:
-            datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            print(f"Date must be in YYYY-MM-DD format, got: {date_str}")
-            sys.exit(1)
+    if DATE_RE.match(args[-1]):
+        date_str = args[-1]
+        md_paths = args[:-1]
     else:
         date_str = datetime.now(ET).strftime("%Y-%m-%d")
+        md_paths = args
 
-    with open(md_path, "r", encoding="utf-8") as f:
-        md_text = f.read()
+    if not md_paths:
+        print("Usage: python render_report.py REPORT.md [more.md ...] [YYYY-MM-DD]")
+        sys.exit(1)
+
+    for md_path in md_paths:
+        if not os.path.exists(md_path):
+            print(f"File not found: {md_path}")
+            sys.exit(1)
 
     generated_str = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
-    html = build_html(md_text, date_str, generated_str)
-
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    out_path = os.path.join(REPORTS_DIR, f"{output_prefix(md_path)}_{date_str}.html")
+
+    if len(md_paths) == 1:
+        with open(md_paths[0], "r", encoding="utf-8") as f:
+            md_text = f.read()
+        html = build_html(md_text, date_str, generated_str)
+        out_path = os.path.join(REPORTS_DIR, f"{output_prefix(md_paths[0])}_{date_str}.html")
+    else:
+        html = build_combined_html(md_paths, date_str, generated_str)
+        combo_slug = "-".join(output_prefix(p) for p in md_paths)
+        out_path = os.path.join(REPORTS_DIR, f"combined_{combo_slug}_{date_str}.html")
+
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
 

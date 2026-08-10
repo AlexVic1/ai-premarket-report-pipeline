@@ -6,15 +6,42 @@ Emails a rendered HTML premarket report via Resend.
 Usage:
     python deliver.py reports/premarket_<date>.html
 
-Reads RESEND_API_KEY, EMAIL_TO, and optional EMAIL_FROM from a local .env file
-using a tiny built in KEY=VALUE parser, no extra dependency. Real environment
-variables always win over whatever is in .env.
+The HTML is sent inline as the email body (Resend/Gmail render it directly in
+the message, no attachment involved). To send multiple reports in one email,
+combine them into a single HTML page first with render_report.py (pass it
+several markdown files at once), then deliver that one combined file, don't
+try to attach several separate HTML files here, mail clients tend to show
+those as raw source instead of a rendered page.
 
-If RESEND_API_KEY or EMAIL_TO aren't set anywhere, the script prints a clear
-skip message and exits cleanly, it never crashes just because email isn't
-configured yet.
+Also generates a PDF of the same page (via html_to_pdf.py, a real headless
+Chromium render, so it looks exactly like the HTML) and attaches it to the
+same email. If PDF generation fails for any reason, the email still goes out
+with just the HTML body, a missing PDF isn't worth blocking delivery over.
+
+Reads RESEND_API_KEY, EMAIL_TO, and optional EMAIL_FROM from a local .env
+file using a tiny built in KEY=VALUE parser, no extra dependency. Real
+environment variables always win over whatever is in .env.
+
+Supports more than one Resend account, each with its own key and recipient
+list, numbered _2, _3, and so on:
+
+    RESEND_API_KEY=re_...      EMAIL_TO=you@example.com
+    RESEND_API_KEY_2=re_...    EMAIL_TO_2=friend@example.com
+
+This exists because Resend's sandbox mode (the free default, no verified
+domain) only allows an API key to send to the email address that owns that
+Resend account. A single key can't send to two different people's inboxes
+until a domain is verified, so the workaround is one Resend account per
+recipient, each with its own free key. Once you verify a domain, a single
+account's EMAIL_TO can hold as many comma separated addresses as you want,
+and the extra numbered accounts become unnecessary. The same report is sent
+once per configured account.
+
+If no account is configured at all, the script prints a clear skip message
+and exits cleanly, it never crashes just because email isn't set up yet.
 """
 
+import base64
 import os
 import re
 import sys
@@ -22,10 +49,13 @@ from datetime import datetime
 
 import requests
 
+from html_to_pdf import html_to_pdf
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, ".env")
 RESEND_URL = "https://api.resend.com/emails"
 DEFAULT_FROM = "AI Premarket Analyst <onboarding@resend.dev>"
+MAX_ACCOUNTS = 5
 
 
 def parse_env_file(path):
@@ -56,6 +86,22 @@ def get_setting(name, dotenv_values, default=None):
     return default
 
 
+def gather_accounts(dotenv_values):
+    accounts = []
+    suffixes = [""] + [f"_{i}" for i in range(2, MAX_ACCOUNTS + 1)]
+    for suf in suffixes:
+        api_key = get_setting(f"RESEND_API_KEY{suf}", dotenv_values)
+        to_raw = get_setting(f"EMAIL_TO{suf}", dotenv_values)
+        if not api_key or not to_raw:
+            continue
+        to_list = [addr.strip() for addr in to_raw.split(",") if addr.strip()]
+        if not to_list:
+            continue
+        from_addr = get_setting(f"EMAIL_FROM{suf}", dotenv_values, default=DEFAULT_FROM)
+        accounts.append({"api_key": api_key, "to": to_list, "from": from_addr})
+    return accounts
+
+
 def guess_date(html_path):
     match = re.search(r"\d{4}-\d{2}-\d{2}", os.path.basename(html_path))
     if match:
@@ -71,6 +117,56 @@ def guess_title(html_content, fallback="AI Premarket Report"):
     return title or fallback
 
 
+def build_pdf_attachment(html_path):
+    try:
+        pdf_path = html_to_pdf(html_path)
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        print(f"  PDF attached: {pdf_path}")
+        return [
+            {
+                "filename": os.path.basename(pdf_path),
+                "content": base64.b64encode(pdf_bytes).decode("ascii"),
+                "content_type": "application/pdf",
+            }
+        ]
+    except Exception as e:
+        print(f"  PDF generation failed, sending HTML only: {e}")
+        return None
+
+
+def send_via_account(account, subject, html_content, attachments):
+    payload = {
+        "from": account["from"],
+        "to": account["to"],
+        "subject": subject,
+        "html": html_content,
+    }
+    if attachments:
+        payload["attachments"] = attachments
+
+    try:
+        resp = requests.post(
+            RESEND_URL,
+            headers={
+                "Authorization": f"Bearer {account['api_key']}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+    except Exception as e:
+        print(f"email failed, could not reach Resend for {', '.join(account['to'])}: {e}")
+        return False
+
+    if resp.status_code >= 400:
+        print(f"email failed for {', '.join(account['to'])}, Resend returned {resp.status_code}: {resp.text}")
+        return False
+
+    print(f"email sent to {', '.join(account['to'])}, subject: {subject}")
+    return True
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python deliver.py reports/premarket_<date>.html")
@@ -82,11 +178,9 @@ def main():
         sys.exit(1)
 
     dotenv_values = parse_env_file(ENV_PATH)
-    resend_api_key = get_setting("RESEND_API_KEY", dotenv_values)
-    email_to = get_setting("EMAIL_TO", dotenv_values)
-    email_from = get_setting("EMAIL_FROM", dotenv_values, default=DEFAULT_FROM)
+    accounts = gather_accounts(dotenv_values)
 
-    if not resend_api_key or not email_to:
+    if not accounts:
         print("email skipped, set RESEND_API_KEY + EMAIL_TO")
         sys.exit(0)
 
@@ -97,32 +191,12 @@ def main():
     title = guess_title(html_content)
     subject = f"{title} - {date_str}"
 
-    payload = {
-        "from": email_from,
-        "to": [email_to],
-        "subject": subject,
-        "html": html_content,
-    }
+    attachments = build_pdf_attachment(html_path)
 
-    try:
-        resp = requests.post(
-            RESEND_URL,
-            headers={
-                "Authorization": f"Bearer {resend_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=30,
-        )
-    except Exception as e:
-        print(f"email failed, could not reach Resend: {e}")
+    results = [send_via_account(account, subject, html_content, attachments) for account in accounts]
+
+    if not any(results):
         sys.exit(1)
-
-    if resp.status_code >= 400:
-        print(f"email failed, Resend returned {resp.status_code}: {resp.text}")
-        sys.exit(1)
-
-    print(f"email sent to {email_to}, subject: {subject}")
 
 
 if __name__ == "__main__":
