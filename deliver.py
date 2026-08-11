@@ -51,6 +51,16 @@ import requests
 
 from html_to_pdf import html_to_pdf
 
+# Windows' default console encoding (cp1252) can't represent everything a
+# downstream error message might contain (Playwright's install-hint box uses
+# Unicode box-drawing characters, for example), and that crashed this exact
+# script's own graceful PDF-failure fallback before, taking the whole email
+# down with it. Reconfigure to UTF-8 with a safe fallback so that can't
+# happen again, whether this runs standalone or via run_daily.py.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, ".env")
 RESEND_URL = "https://api.resend.com/emails"

@@ -52,6 +52,15 @@ import requests
 
 from render_report import output_prefix
 
+# Windows' default console encoding (cp1252) can't represent a lot of
+# Unicode, box-drawing characters in a tool's error output being a real
+# example that has crashed this exact print() before. Reconfigure to UTF-8
+# with a safe fallback so a weird character in some downstream error message
+# never takes down the whole run.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 ET = ZoneInfo("America/New_York")
@@ -101,9 +110,26 @@ def make_logger(log_file):
 
 
 def make_runner(log_file, log):
+    # Force every child script to run in UTF-8 mode, matching the parent's
+    # own reconfigure above, so a stray Unicode character in some tool's
+    # output (Playwright's install-hint box, an em-dash in a headline,
+    # whatever) can't crash a child's print() the way it crashed deliver.py
+    # today. encoding/errors here control how THIS process decodes what the
+    # child wrote, PYTHONUTF8/PYTHONIOENCODING control how the child itself
+    # encodes it, both ends need to agree.
+    child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
     def run(cmd, label):
         log(f"=== {label} ===")
-        result = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            cwd=HERE,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=child_env,
+        )
         if result.stdout:
             log(result.stdout.rstrip("\n"))
         if result.stderr:

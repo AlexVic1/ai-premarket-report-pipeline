@@ -17,6 +17,19 @@ import os
 import sys
 from pathlib import Path
 
+# Must be set before playwright is imported, it reads this at import time to
+# find its installed browsers. Windows Task Scheduler's "run whether user is
+# logged on or not" session doesn't always resolve %LOCALAPPDATA% the same
+# way an interactive session does, even though it's still running as the same
+# user, so the default lookup can miss browsers that are genuinely installed.
+# Pointing at the real path explicitly sidesteps that instead of guessing why.
+# USERPROFILE tends to stay correctly populated in more execution contexts
+# than LOCALAPPDATA does, use it as the base rather than trusting LOCALAPPDATA
+# directly.
+_user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+_default_browsers_path = os.path.join(_user_profile, "AppData", "Local", "ms-playwright")
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _default_browsers_path)
+
 from playwright.sync_api import sync_playwright
 
 
