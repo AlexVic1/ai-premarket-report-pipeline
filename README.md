@@ -1,10 +1,6 @@
 # AI Premarket Report Pipeline
 
-A pipeline that pulls free, keyless market data before the open, screens it
-against two backtested watchlist setups plus two extra quality filters, has
-Claude write an actual analyst report on top of the rule based picks, renders
-everything into a clean HTML page with a matching PDF, and emails it to you
-automatically every weekday morning, unattended.
+
 
 Nothing here is financial advice. It's a data, screening, and reporting tool,
 not a signal generator, treat every output as a starting point for your own
