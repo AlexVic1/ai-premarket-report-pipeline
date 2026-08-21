@@ -37,6 +37,13 @@ reports instead. The two-brain Claude + Codex merge (prompt_codex.md, Codex
 CLI) is NOT part of this, it's still a manual, on-demand workflow, a live
 Codex pass needs its own CLI session and isn't something this script drives.
 
+Every day's REPORT.md, STAGE2_RIDER_REPORT.md, FINVIZ_SECTOR_SCAN_REPORT.md,
+and packet.json get copied into weekly_archive/<week>/<date>/ once that day's
+reports are ready (see weekly_summary.py), so there's a local record to look
+back on. On Fridays, after the normal daily send, this script also runs
+weekly_summary.py against that week's archived reports and emails the result
+as a separate follow-up message.
+
 Usage:
     python run_daily.py
 """
@@ -51,6 +58,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from render_report import output_prefix
+from weekly_summary import archive_day, week_folder_name
 
 # Windows' default console encoding (cp1252) can't represent a lot of
 # Unicode, box-drawing characters in a tool's error output being a real
@@ -186,6 +194,11 @@ def main():
             log("=== Daily pipeline done, nothing rendered, nothing sent ===")
             sys.exit(1)
 
+        archive_files = [(os.path.join(HERE, "packet.json"), "packet.json")]
+        archive_files += [(os.path.join(HERE, f), f) for f in ready_md_files]
+        day_dir, archived = archive_day(date_str, archive_files)
+        log(f"Archived to {day_dir}: {', '.join(archived)}")
+
         if not run([PY, "render_report.py"] + ready_md_files + [date_str], "render combined report"):
             log("=== Daily pipeline done, render failed, nothing sent ===")
             sys.exit(1)
@@ -201,6 +214,25 @@ def main():
         log(f"=== Daily pipeline done for {date_str} ===")
         log(f"  reports rendered: {', '.join(ready_md_files)}")
         log(f"  email: {'sent' if sent else 'failed'}")
+
+        if weekday == 4:
+            log("=== Friday, running weekly summary ===")
+            weekly_md = os.path.join(
+                "weekly_archive", week_folder_name(datetime.now(ET)), "WEEKLY_SUMMARY.md"
+            )
+            weekly_before = os.path.getmtime(weekly_md) if os.path.exists(weekly_md) else None
+            weekly_ok = run([PY, "weekly_summary.py"], "weekly_summary.py")
+            weekly_after = os.path.getmtime(weekly_md) if os.path.exists(weekly_md) else None
+
+            if weekly_ok and weekly_after is not None and weekly_after != weekly_before:
+                if run([PY, "render_report.py", weekly_md, date_str], "render weekly summary"):
+                    weekly_html = os.path.join("reports", f"weekly_summary_{date_str}.html")
+                    weekly_sent = run([PY, "deliver.py", weekly_html], f"deliver {weekly_html}")
+                    log(f"  weekly summary email: {'sent' if weekly_sent else 'failed'}")
+                else:
+                    log("  weekly summary render failed, not sent")
+            else:
+                log("  weekly summary not sent (no archived reports this week, or CLI not logged in)")
 
         if not sent:
             sys.exit(1)

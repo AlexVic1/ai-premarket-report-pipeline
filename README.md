@@ -75,10 +75,18 @@ html_to_pdf.py            converts a rendered HTML report to PDF with headless
 deliver.py                 emails a rendered HTML report (plus PDF) via Resend,
                           supports multiple recipients and multiple accounts
 
+weekly_summary.py         archives each day's reports into
+                          weekly_archive/<week>/<date>/, and on Fridays
+                          synthesizes that week's REPORT.md files into one
+                          recap via the Claude Code CLI, writes
+                          WEEKLY_SUMMARY.md, see below
+
 run_daily.py               the full unattended chain: scan, Claude analyst,
-                          both mechanical reports, render, PDF, deliver, all
-                          logged to logs/run_daily_<date>.log. Weekdays only,
-                          waits for a lost internet connection to come back
+                          both mechanical reports, render, PDF, deliver,
+                          weekly archive (plus weekly summary on Fridays),
+                          all logged to logs/run_daily_<date>.log. Weekdays
+                          only, waits for a lost internet connection to come
+                          back
 
 WATCHLIST_CRITERIA.md     the source of truth for every rule, in plain English
 
@@ -88,7 +96,31 @@ REPORT_TEMPLATE.md        the section by section blueprint the AI report
 prompt_claude.md           the analyst + merge prompts claude_analyst.py runs.
 prompt_merge.md           Also reusable manually for a deeper, two-brain
 prompt_codex.md           report with Codex as a second opinion, see below.
+
+prompt_weekly.md          the prompt weekly_summary.py runs against a week's
+                          archived daily reports
 ```
+
+## Weekly archive and summary
+
+Every day `run_daily.py` runs, it copies that day's REPORT.md,
+STAGE2_RIDER_REPORT.md, FINVIZ_SECTOR_SCAN_REPORT.md, and packet.json into
+`weekly_archive/<week>/<date>/`, where `<week>` is that trading week's
+Monday-Friday range like `17.8-21.8`. It's a local record, nothing here gets
+emailed on its own and the folder is gitignored.
+
+On Fridays, after the normal daily email goes out, `run_daily.py` also runs
+`weekly_summary.py`, which reads that week's archived REPORT.md files (however
+many actually ran, 1 to 5) and asks Claude to synthesize them into one recap:
+the week's market arc, sector and theme leadership, which watchlist names
+actually cleared the gates, notable multi-day stories, and what's coming up.
+It's a synthesis of the daily reports only, no new data pulled, same Claude
+Pro/Max subscription auth as the main report, same self-skip if the CLI isn't
+logged in. Writes `weekly_archive/<week>/WEEKLY_SUMMARY.md`, then gets
+rendered and emailed as its own follow-up message, same as the daily reports.
+
+Run it by hand any time with `.venv\Scripts\python.exe weekly_summary.py`, it
+just picks up whatever's archived for the current week so far.
 
 ## Setup
 
