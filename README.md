@@ -39,7 +39,8 @@ no API key of any kind.
   readable report, on top of (not instead of) the rule based picks. Requires
   the Pro/Max subscription above, skips itself cleanly if that's not set up.
 - Renders any of these into a clean HTML page, plus a pixel-identical PDF via
-  headless Chromium, and emails the combined result via Resend.
+  headless Chromium, saved locally under `reports/`. Email delivery
+  (`deliver.py`, via Resend) exists and works but isn't run automatically.
 - Runs unattended on a schedule: weekdays only, works even when you're not
   logged into the machine, and waits out a dead internet connection instead of
   just failing silently.
@@ -69,7 +70,9 @@ html_to_pdf.py            converts a rendered HTML report to PDF with headless
                           Chromium (Playwright), pixel identical to the HTML
 
 deliver.py                 emails a rendered HTML report (plus PDF) via Resend,
-                          supports multiple recipients and multiple accounts
+                          supports multiple recipients and multiple accounts.
+                          Not run automatically by run_daily.py (see below),
+                          works standalone if you want email back
 
 weekly_summary.py         archives each day's reports into
                           weekly_archive/<week>/<date>/, and on Fridays
@@ -78,7 +81,7 @@ weekly_summary.py         archives each day's reports into
                           WEEKLY_SUMMARY.md, see below
 
 run_daily.py               the full unattended chain: scan, Claude analyst,
-                          both mechanical reports, render, PDF, deliver,
+                          both mechanical reports, render, save PDF locally,
                           weekly archive (plus weekly summary on Fridays),
                           all logged to logs/run_daily_<date>.log. Weekdays
                           only, waits for a lost internet connection to come
@@ -102,10 +105,10 @@ prompt_weekly.md          the prompt weekly_summary.py runs against a week's
 Every day `run_daily.py` runs, it copies that day's REPORT.md,
 STAGE2_RIDER_REPORT.md, FINVIZ_SECTOR_SCAN_REPORT.md, and packet.json into
 `weekly_archive/<week>/<date>/`, where `<week>` is that trading week's
-Monday-Friday range like `17.8-21.8`. It's a local record, nothing here gets
-emailed on its own and the folder is gitignored.
+Monday-Friday range like `17.8-21.8`. It's a local record, and the folder is
+gitignored.
 
-On Fridays, after the normal daily email goes out, `run_daily.py` also runs
+On Fridays, after the normal daily PDF is saved, `run_daily.py` also runs
 `weekly_summary.py`, which reads that week's archived REPORT.md files (however
 many actually ran, 1 to 5) and asks Claude to synthesize them into one recap:
 the week's market arc, sector and theme leadership, which watchlist names
@@ -113,7 +116,7 @@ actually cleared the gates, notable multi-day stories, and what's coming up.
 It's a synthesis of the daily reports only, no new data pulled, same Claude
 Pro/Max subscription auth as the main report, same self-skip if the CLI isn't
 logged in. Writes `weekly_archive/<week>/WEEKLY_SUMMARY.md`, then gets
-rendered and emailed as its own follow-up message, same as the daily reports.
+rendered and saved as its own PDF under `reports/`, same as the daily one.
 
 Run it by hand any time with `.venv\Scripts\python.exe weekly_summary.py`, it
 just picks up whatever's archived for the current week so far.
@@ -143,6 +146,14 @@ Copy the env template and fill it in:
 copy .env.example .env
 ```
 
+`.env` is only needed if you want email delivery back (see below), the
+default automated pipeline (`run_daily.py`) doesn't touch it at all, it just
+saves PDFs locally. If you do want email, copy the template and fill it in:
+
+```
+copy .env.example .env
+```
+
 Open `.env` and set:
 - `RESEND_API_KEY`, get one free at https://resend.com/api-keys
 - `EMAIL_TO`, the inbox(es) that should receive the reports, comma separated
@@ -159,7 +170,8 @@ Open `.env` and set:
 
 ## Running it
 
-The simplest path, one command that does everything and emails the result:
+The simplest path, one command that does everything and saves a PDF locally
+under `reports/`:
 
 ```
 .venv\Scripts\python.exe run_daily.py
@@ -173,6 +185,13 @@ Or run each step yourself:
 .venv\Scripts\python.exe stage2_scan.py
 .venv\Scripts\python.exe finviz_sector_scan.py
 .venv\Scripts\python.exe render_report.py REPORT.md STAGE2_RIDER_REPORT.md FINVIZ_SECTOR_SCAN_REPORT.md
+.venv\Scripts\python.exe html_to_pdf.py reports/combined_..._<date>.html
+```
+
+Want email too, or instead? Run `deliver.py` by hand against any rendered
+HTML report, it isn't part of the automated pipeline but works standalone:
+
+```
 .venv\Scripts\python.exe deliver.py reports/combined_..._<date>.html
 ```
 

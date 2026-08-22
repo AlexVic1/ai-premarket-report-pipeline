@@ -15,7 +15,12 @@ If no output path is given, writes next to the HTML file with a .pdf extension.
 
 import os
 import sys
+import time
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Must be set before playwright is imported, it reads this at import time to
 # find its installed browsers. Windows Task Scheduler's "run whether user is
@@ -33,6 +38,10 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _default_browsers_path)
 from playwright.sync_api import sync_playwright
 
 
+LAUNCH_ATTEMPTS = 3
+LAUNCH_RETRY_SECONDS = 5
+
+
 def html_to_pdf(html_path, pdf_path=None):
     html_path = os.path.abspath(html_path)
     if pdf_path is None:
@@ -40,26 +49,42 @@ def html_to_pdf(html_path, pdf_path=None):
 
     url = Path(html_path).resolve().as_uri()
 
-    with sync_playwright() as p:
-        # --no-sandbox and friends matter here specifically because this also
-        # runs unattended under Windows Task Scheduler ("run whether user is
-        # logged on or not"), a restricted, non-interactive session where
-        # Chromium's normal sandboxing can fail to initialize. Harmless when
-        # run interactively too.
-        browser = p.chromium.launch(
-            args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
-        )
-        page = browser.new_page()
-        page.goto(url)
-        page.pdf(
-            path=pdf_path,
-            format="A4",
-            print_background=True,
-            margin={"top": "12mm", "bottom": "12mm", "left": "10mm", "right": "10mm"},
-        )
-        browser.close()
+    # Under Windows Task Scheduler's "run whether user is logged on or not"
+    # session, Chromium's launch has intermittently failed with "Executable
+    # doesn't exist" even though the file is genuinely on disk and the same
+    # path resolves fine interactively, likely some transient profile/AV
+    # timing quirk specific to that non-interactive session rather than a
+    # real missing-file problem. A short retry papers over that without
+    # needing to fully pin down the cause.
+    last_error = None
+    for attempt in range(1, LAUNCH_ATTEMPTS + 1):
+        try:
+            with sync_playwright() as p:
+                # --no-sandbox and friends matter here specifically because
+                # this also runs unattended under Task Scheduler, a
+                # restricted, non-interactive session where Chromium's
+                # normal sandboxing can fail to initialize. Harmless when
+                # run interactively too.
+                browser = p.chromium.launch(
+                    args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+                )
+                page = browser.new_page()
+                page.goto(url)
+                page.pdf(
+                    path=pdf_path,
+                    format="A4",
+                    print_background=True,
+                    margin={"top": "12mm", "bottom": "12mm", "left": "10mm", "right": "10mm"},
+                )
+                browser.close()
+            return pdf_path
+        except Exception as e:
+            last_error = e
+            if attempt < LAUNCH_ATTEMPTS:
+                print(f"PDF attempt {attempt} failed ({e}), retrying in {LAUNCH_RETRY_SECONDS}s...")
+                time.sleep(LAUNCH_RETRY_SECONDS)
 
-    return pdf_path
+    raise last_error
 
 
 def main():

@@ -4,9 +4,10 @@ run_daily.py
 The automated morning pipeline: refresh premarket data, run the two mechanical
 scans (Stage 2 Rider, FinViz Sector Scan), run the Claude-only analyst + merge
 pass for the main AI Premarket Report (claude_analyst.py, no Codex), combine
-everything into a single HTML page, and email that one page. One combined
-document sent inline as the email body, plus a PDF of the same page attached
-(see html_to_pdf.py / deliver.py).
+everything into a single HTML page, and save a PDF of that page locally under
+reports/ (see html_to_pdf.py). Nothing gets emailed automatically, that's a
+deliberate choice, deliver.py still exists and works for anyone who wants to
+wire email back in or send a one-off copy by hand.
 
 Weekdays only. Windows Task Scheduler fired this on weekends too (its trigger
 isn't restricted to weekdays), so this script gates on the day of week itself
@@ -40,9 +41,9 @@ Codex pass needs its own CLI session and isn't something this script drives.
 Every day's REPORT.md, STAGE2_RIDER_REPORT.md, FINVIZ_SECTOR_SCAN_REPORT.md,
 and packet.json get copied into weekly_archive/<week>/<date>/ once that day's
 reports are ready (see weekly_summary.py), so there's a local record to look
-back on. On Fridays, after the normal daily send, this script also runs
-weekly_summary.py against that week's archived reports and emails the result
-as a separate follow-up message.
+back on. On Fridays, after the normal daily save, this script also runs
+weekly_summary.py against that week's archived reports and saves the result
+as its own PDF, same as the daily one.
 
 Usage:
     python run_daily.py
@@ -160,7 +161,7 @@ def main():
         run = make_runner(log_file, log)
 
         if weekday >= 5:
-            log(f"=== {date_str} is a weekend, skipping, no report sent ===")
+            log(f"=== {date_str} is a weekend, skipping, no report saved ===")
             return
 
         if not wait_for_internet(log):
@@ -186,12 +187,12 @@ def main():
 
         for scan_script, md_file in MECHANICAL_REPORTS:
             if not run([PY, scan_script], scan_script):
-                log(f"!!! {scan_script} failed, {md_file} won't be in today's email")
+                log(f"!!! {scan_script} failed, {md_file} won't be in today's report")
                 continue
             ready_md_files.append(md_file)
 
         if not ready_md_files:
-            log("=== Daily pipeline done, nothing rendered, nothing sent ===")
+            log("=== Daily pipeline done, nothing rendered, nothing saved ===")
             sys.exit(1)
 
         archive_files = [(os.path.join(HERE, "packet.json"), "packet.json")]
@@ -200,7 +201,7 @@ def main():
         log(f"Archived to {day_dir}: {', '.join(archived)}")
 
         if not run([PY, "render_report.py"] + ready_md_files + [date_str], "render combined report"):
-            log("=== Daily pipeline done, render failed, nothing sent ===")
+            log("=== Daily pipeline done, render failed, nothing saved ===")
             sys.exit(1)
 
         if len(ready_md_files) == 1:
@@ -209,11 +210,11 @@ def main():
             combo_slug = "-".join(output_prefix(p) for p in ready_md_files)
             html_file = os.path.join("reports", f"combined_{combo_slug}_{date_str}.html")
 
-        sent = run([PY, "deliver.py", html_file], f"deliver {html_file}")
+        pdf_ok = run([PY, "html_to_pdf.py", html_file], f"PDF {html_file}")
 
         log(f"=== Daily pipeline done for {date_str} ===")
         log(f"  reports rendered: {', '.join(ready_md_files)}")
-        log(f"  email: {'sent' if sent else 'failed'}")
+        log(f"  PDF: {'saved' if pdf_ok else 'failed, HTML is still saved at ' + html_file}")
 
         if weekday == 4:
             log("=== Friday, running weekly summary ===")
@@ -227,14 +228,14 @@ def main():
             if weekly_ok and weekly_after is not None and weekly_after != weekly_before:
                 if run([PY, "render_report.py", weekly_md, date_str], "render weekly summary"):
                     weekly_html = os.path.join("reports", f"weekly_summary_{date_str}.html")
-                    weekly_sent = run([PY, "deliver.py", weekly_html], f"deliver {weekly_html}")
-                    log(f"  weekly summary email: {'sent' if weekly_sent else 'failed'}")
+                    weekly_pdf_ok = run([PY, "html_to_pdf.py", weekly_html], f"PDF {weekly_html}")
+                    log(f"  weekly summary PDF: {'saved' if weekly_pdf_ok else 'failed, HTML is still saved at ' + weekly_html}")
                 else:
-                    log("  weekly summary render failed, not sent")
+                    log("  weekly summary render failed, not saved")
             else:
-                log("  weekly summary not sent (no archived reports this week, or CLI not logged in)")
+                log("  weekly summary not generated (no archived reports this week, or CLI not logged in)")
 
-        if not sent:
+        if not pdf_ok:
             sys.exit(1)
 
 

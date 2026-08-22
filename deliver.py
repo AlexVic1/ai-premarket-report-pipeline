@@ -3,6 +3,11 @@ deliver.py
 
 Emails a rendered HTML premarket report via Resend.
 
+Not called automatically by run_daily.py, which saves reports as local PDFs
+instead (see html_to_pdf.py). This script still works standalone for anyone
+who wants email delivery back, either by running it by hand or by adding it
+back into run_daily.py.
+
 Usage:
     python deliver.py reports/premarket_<date>.html
 
