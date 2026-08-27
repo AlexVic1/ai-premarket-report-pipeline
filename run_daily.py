@@ -3,11 +3,11 @@ run_daily.py
 
 The automated morning pipeline: refresh premarket data, run the two mechanical
 scans (Stage 2 Rider, FinViz Sector Scan), run the Claude-only analyst + merge
-pass for the main AI Premarket Report (claude_analyst.py, no Codex), combine
-everything into a single HTML page, and save a PDF of that page locally under
-reports/ (see html_to_pdf.py). Nothing gets emailed automatically, that's a
-deliberate choice, deliver.py still exists and works for anyone who wants to
-wire email back in or send a one-off copy by hand.
+pass for the main AI Premarket Report (claude_analyst.py, no Codex), and
+combine everything into a single HTML page saved locally under reports/.
+Nothing gets emailed and no PDF gets generated, that's a deliberate choice,
+deliver.py and html_to_pdf.py still exist and work standalone for anyone who
+wants either back.
 
 Weekdays only. Windows Task Scheduler fired this on weekends too (its trigger
 isn't restricted to weekdays), so this script gates on the day of week itself
@@ -28,8 +28,8 @@ from here.
 Everything this script and the scripts it calls print goes to
 logs/run_daily_<date>.log as well as stdout. Task Scheduler never captures
 stdout anywhere, so without this, an unattended run failing partway through
-(the PDF step, the analyst pass, whatever) leaves no trace of why. Check that
-log first when something looks wrong with an automated run.
+(the render step, the analyst pass, whatever) leaves no trace of why. Check
+that log first when something looks wrong with an automated run.
 
 The AI Premarket Report step is optional and self-skipping: if the Claude
 Code CLI isn't installed or isn't logged in, claude_analyst.py prints a skip
@@ -43,7 +43,7 @@ and packet.json get copied into weekly_archive/<week>/<date>/ once that day's
 reports are ready (see weekly_summary.py), so there's a local record to look
 back on. On Fridays, after the normal daily save, this script also runs
 weekly_summary.py against that week's archived reports and saves the result
-as its own PDF, same as the daily one.
+as its own HTML page, same as the daily one.
 
 Usage:
     python run_daily.py
@@ -210,11 +210,9 @@ def main():
             combo_slug = "-".join(output_prefix(p) for p in ready_md_files)
             html_file = os.path.join("reports", f"combined_{combo_slug}_{date_str}.html")
 
-        pdf_ok = run([PY, "html_to_pdf.py", html_file], f"PDF {html_file}")
-
         log(f"=== Daily pipeline done for {date_str} ===")
         log(f"  reports rendered: {', '.join(ready_md_files)}")
-        log(f"  PDF: {'saved' if pdf_ok else 'failed, HTML is still saved at ' + html_file}")
+        log(f"  HTML saved at {html_file}")
 
         if weekday == 4:
             log("=== Friday, running weekly summary ===")
@@ -228,15 +226,11 @@ def main():
             if weekly_ok and weekly_after is not None and weekly_after != weekly_before:
                 if run([PY, "render_report.py", weekly_md, date_str], "render weekly summary"):
                     weekly_html = os.path.join("reports", f"weekly_summary_{date_str}.html")
-                    weekly_pdf_ok = run([PY, "html_to_pdf.py", weekly_html], f"PDF {weekly_html}")
-                    log(f"  weekly summary PDF: {'saved' if weekly_pdf_ok else 'failed, HTML is still saved at ' + weekly_html}")
+                    log(f"  weekly summary HTML saved at {weekly_html}")
                 else:
                     log("  weekly summary render failed, not saved")
             else:
                 log("  weekly summary not generated (no archived reports this week, or CLI not logged in)")
-
-        if not pdf_ok:
-            sys.exit(1)
 
 
 if __name__ == "__main__":
