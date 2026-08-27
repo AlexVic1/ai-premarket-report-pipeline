@@ -1,11 +1,16 @@
 """
 html_to_pdf.py
 
-Converts a rendered HTML report into a PDF using a headless Chromium browser
-(Playwright). This is a real browser doing the rendering, the same engine
-behind Chrome, so the PDF comes out pixel-for-pixel the same as the HTML page,
-CSS custom properties and all, not an approximation from a lightweight PDF
-library that would drop the styling.
+Converts a rendered HTML report into a PDF using a real Chromium based browser
+via Playwright, headless. This is a real browser doing the rendering, the
+same engine behind Chrome, so the PDF comes out pixel-for-pixel the same as
+the HTML page, CSS custom properties and all, not an approximation from a
+lightweight PDF library that would drop the styling.
+
+Tries the system's actual installed Edge or Chrome first (via Playwright's
+"channel" option), falling back to Playwright's own separately downloaded
+Chromium only if neither is present, see the comment above LAUNCH_STRATEGIES
+for why.
 
 Usage:
     python html_to_pdf.py reports/premarket_<date>.html [output.pdf]
@@ -15,7 +20,6 @@ If no output path is given, writes next to the HTML file with a .pdf extension.
 
 import os
 import sys
-import time
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -38,8 +42,24 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _default_browsers_path)
 from playwright.sync_api import sync_playwright
 
 
-LAUNCH_ATTEMPTS = 3
-LAUNCH_RETRY_SECONDS = 5
+# Every automated run this week hit the identical failure: Playwright's own
+# bundled Chromium (downloaded into ms-playwright/ by `playwright install`)
+# reports "Executable doesn't exist" specifically under Task Scheduler's
+# background session, even though the exact same file is genuinely on disk
+# and launches fine when run interactively. A same-process retry didn't help,
+# it failed the same way every time, so this isn't a transient timing issue,
+# something about that non-interactive launch consistently can't use it.
+# The likely cause is security software treating a background launch of an
+# unrecognized, separately-downloaded browser binary with more suspicion than
+# a browser that's already installed, signed, and in everyday use on the
+# machine. So try real installed browsers first via Playwright's "channel"
+# option (no separate download, launches the actual system Edge/Chrome), and
+# only fall back to Playwright's own bundled Chromium if neither is present.
+LAUNCH_STRATEGIES = [
+    {"channel": "msedge"},
+    {"channel": "chrome"},
+    {},
+]
 
 
 def html_to_pdf(html_path, pdf_path=None):
@@ -49,15 +69,9 @@ def html_to_pdf(html_path, pdf_path=None):
 
     url = Path(html_path).resolve().as_uri()
 
-    # Under Windows Task Scheduler's "run whether user is logged on or not"
-    # session, Chromium's launch has intermittently failed with "Executable
-    # doesn't exist" even though the file is genuinely on disk and the same
-    # path resolves fine interactively, likely some transient profile/AV
-    # timing quirk specific to that non-interactive session rather than a
-    # real missing-file problem. A short retry papers over that without
-    # needing to fully pin down the cause.
     last_error = None
-    for attempt in range(1, LAUNCH_ATTEMPTS + 1):
+    for launch_kwargs in LAUNCH_STRATEGIES:
+        label = launch_kwargs.get("channel", "Playwright's bundled Chromium")
         try:
             with sync_playwright() as p:
                 # --no-sandbox and friends matter here specifically because
@@ -66,7 +80,8 @@ def html_to_pdf(html_path, pdf_path=None):
                 # normal sandboxing can fail to initialize. Harmless when
                 # run interactively too.
                 browser = p.chromium.launch(
-                    args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+                    args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+                    **launch_kwargs,
                 )
                 page = browser.new_page()
                 page.goto(url)
@@ -80,9 +95,7 @@ def html_to_pdf(html_path, pdf_path=None):
             return pdf_path
         except Exception as e:
             last_error = e
-            if attempt < LAUNCH_ATTEMPTS:
-                print(f"PDF attempt {attempt} failed ({e}), retrying in {LAUNCH_RETRY_SECONDS}s...")
-                time.sleep(LAUNCH_RETRY_SECONDS)
+            print(f"PDF via {label} failed ({e}), trying next option...")
 
     raise last_error
 
