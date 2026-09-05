@@ -75,9 +75,16 @@ class ReportGUI:
         daily_frame.pack(fill=tk.X, pady=(0, 8))
 
         weekly_frame = self._build_section(
-            top, "Weekly Summary", self.start_weekly, "weekly"
+            top, "Weekly Summary", self.start_weekly, "weekly",
+            view_command=self.view_last_weekly,
         )
         weekly_frame.pack(fill=tk.X)
+
+        shortcuts = ttk.Frame(top, padding=(0, 8, 0, 0))
+        shortcuts.pack(fill=tk.X)
+        ttk.Button(
+            shortcuts, text="Open Reports Folder", command=self.open_reports_folder
+        ).pack(side=tk.LEFT)
 
         log_frame = ttk.Frame(self.root, padding=(10, 0, 10, 10))
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -91,7 +98,7 @@ class ReportGUI:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def _build_section(self, parent, title, generate_command, key):
+    def _build_section(self, parent, title, generate_command, key, view_command=None):
         frame = ttk.LabelFrame(parent, text=title, padding=10)
 
         generate_btn = ttk.Button(frame, text=f"Generate {title}", command=generate_command)
@@ -105,6 +112,8 @@ class ReportGUI:
             chk.grid(row=0, column=1 + i, sticky="w", padx=(0, 12))
             email_vars[addr] = var
 
+        action_col = 1 + len(EMAIL_OPTIONS)
+
         send_btn = ttk.Button(
             frame,
             text="Send Email",
@@ -113,6 +122,10 @@ class ReportGUI:
         )
         send_btn.grid(row=1, column=1, sticky="w", pady=(6, 0))
         self.all_buttons.append(send_btn)
+
+        if view_command is not None:
+            view_btn = ttk.Button(frame, text=f"View Last {title}", command=view_command)
+            view_btn.grid(row=0, column=action_col, sticky="w", padx=(12, 0))
 
         status_label = ttk.Label(frame, text="Not generated yet this session", foreground="#666")
         status_label.grid(row=1, column=2, columnspan=len(EMAIL_OPTIONS), sticky="w", padx=(12, 0), pady=(6, 0))
@@ -298,6 +311,48 @@ class ReportGUI:
             )
         finally:
             self.root.after(0, lambda: self.set_busy(False))
+
+    # ---- shortcuts ----
+
+    def find_latest_weekly_report(self):
+        """Most recently generated weekly_summary_*.{pdf,html} in reports/, PDF preferred over HTML for the same date."""
+        reports_dir = os.path.join(HERE, "reports")
+        if not os.path.isdir(reports_dir):
+            return None
+
+        by_stem = {}
+        for name in os.listdir(reports_dir):
+            if not name.startswith("weekly_summary_"):
+                continue
+            stem, ext = os.path.splitext(name)
+            if ext.lower() not in (".pdf", ".html"):
+                continue
+            by_stem.setdefault(stem, {})[ext.lower()] = name
+        if not by_stem:
+            return None
+
+        latest_stem = max(
+            by_stem,
+            key=lambda stem: max(
+                os.path.getmtime(os.path.join(reports_dir, name)) for name in by_stem[stem].values()
+            ),
+        )
+        files = by_stem[latest_stem]
+        chosen = files.get(".pdf") or files.get(".html")
+        return os.path.join(reports_dir, chosen)
+
+    def view_last_weekly(self):
+        path = self.find_latest_weekly_report()
+        if not path:
+            self.log("No weekly summary found in reports/ yet, generate one first")
+            return
+        self.log(f"Opening {path}")
+        os.startfile(path)
+
+    def open_reports_folder(self):
+        reports_dir = os.path.join(HERE, "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        os.startfile(reports_dir)
 
 
 def main():
