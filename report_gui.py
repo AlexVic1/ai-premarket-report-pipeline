@@ -70,7 +70,8 @@ class ReportGUI:
         top.pack(fill=tk.X)
 
         daily_frame = self._build_section(
-            top, "Daily Report", self.start_daily, "daily"
+            top, "Daily Report", self.start_daily, "daily",
+            view_command=self.view_last_daily,
         )
         daily_frame.pack(fill=tk.X, pady=(0, 8))
 
@@ -314,18 +315,16 @@ class ReportGUI:
 
     # ---- shortcuts ----
 
-    def find_latest_weekly_report(self):
-        """Most recently generated weekly_summary_*.{pdf,html} in reports/, PDF preferred over HTML for the same date."""
+    def _find_latest_report(self, stem_matches):
+        """Most recently generated *.{pdf,html} in reports/ whose stem passes stem_matches, PDF preferred over HTML for the same report."""
         reports_dir = os.path.join(HERE, "reports")
         if not os.path.isdir(reports_dir):
             return None
 
         by_stem = {}
         for name in os.listdir(reports_dir):
-            if not name.startswith("weekly_summary_"):
-                continue
             stem, ext = os.path.splitext(name)
-            if ext.lower() not in (".pdf", ".html"):
+            if ext.lower() not in (".pdf", ".html") or not stem_matches(stem):
                 continue
             by_stem.setdefault(stem, {})[ext.lower()] = name
         if not by_stem:
@@ -341,10 +340,27 @@ class ReportGUI:
         chosen = files.get(".pdf") or files.get(".html")
         return os.path.join(reports_dir, chosen)
 
+    def find_latest_weekly_report(self):
+        return self._find_latest_report(lambda stem: stem.startswith("weekly_summary_"))
+
+    def find_latest_daily_report(self):
+        # Every report file in reports/ that isn't a weekly summary is a
+        # daily one, "premarket_<date>" or "combined_<slug>_<date>"
+        # depending on which of that day's reports actually rendered.
+        return self._find_latest_report(lambda stem: not stem.startswith("weekly_summary_"))
+
     def view_last_weekly(self):
         path = self.find_latest_weekly_report()
         if not path:
             self.log("No weekly summary found in reports/ yet, generate one first")
+            return
+        self.log(f"Opening {path}")
+        os.startfile(path)
+
+    def view_last_daily(self):
+        path = self.find_latest_daily_report()
+        if not path:
+            self.log("No daily report found in reports/ yet, generate one first")
             return
         self.log(f"Opening {path}")
         os.startfile(path)
