@@ -100,6 +100,9 @@ prompt_codex.md           report with Codex as a second opinion, see below.
 
 prompt_weekly.md          the prompt weekly_summary.py runs against a week's
                           archived daily reports
+
+report_gui.py              a manual on-demand control panel (Tkinter), see
+                          below, doesn't replace run_daily.py's automation
 ```
 
 ## Weekly archive and summary
@@ -122,6 +125,27 @@ rendered and saved as its own HTML page under `reports/`, same as the daily one.
 
 Run it by hand any time with `.venv\Scripts\python.exe weekly_summary.py`, it
 just picks up whatever's archived for the current week so far.
+
+## GUI control panel
+
+`report_gui.py` is a small Tkinter window for running things by hand without
+a terminal, alongside (not instead of) `run_daily.py`'s automated schedule:
+
+```
+.venv\Scripts\pythonw.exe report_gui.py
+```
+
+(`pythonw.exe` instead of `python.exe` launches it without a console window
+trailing behind it.)
+
+Two sections, Daily Report and Weekly Summary, each with a Generate button
+that runs the same steps `run_daily.py` does (minus the weekday/internet
+gating, since this is for running on demand) and saves HTML + PDF under
+`reports/`. Below each Generate button, a checkbox per known recipient
+(`afire12@gmail.com`, `ykalifa@gmail.com`) and a Send Email button that emails
+whichever report was just generated to whichever boxes are checked, via
+`deliver.py --to`. A progress log at the bottom shows what's happening,
+since the AI analyst step can take a minute or two.
 
 ## Setup
 

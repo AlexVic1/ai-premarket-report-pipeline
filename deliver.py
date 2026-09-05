@@ -10,6 +10,14 @@ back into run_daily.py.
 
 Usage:
     python deliver.py reports/premarket_<date>.html
+    python deliver.py reports/premarket_<date>.html --to ykalifa@gmail.com
+    python deliver.py reports/premarket_<date>.html --to addr1@x.com,addr2@y.com
+
+Without --to, sends through every configured account (the original
+behavior). With --to, only sends through the account(s) whose EMAIL_TO
+includes one of the given addresses, letting a caller (report_gui.py, or you
+by hand) target a specific recipient instead of always emailing everyone
+configured.
 
 The HTML is sent inline as the email body (Resend/Gmail render it directly in
 the message, no attachment involved). To send multiple reports in one email,
@@ -183,17 +191,34 @@ def send_via_account(account, subject, html_content, attachments):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python deliver.py reports/premarket_<date>.html")
+    args = sys.argv[1:]
+
+    to_filter = None
+    if "--to" in args:
+        idx = args.index("--to")
+        if idx + 1 >= len(args):
+            print("--to needs a comma separated list of addresses")
+            sys.exit(1)
+        to_filter = {addr.strip().lower() for addr in args[idx + 1].split(",") if addr.strip()}
+        del args[idx:idx + 2]
+
+    if not args:
+        print("Usage: python deliver.py reports/premarket_<date>.html [--to email1,email2]")
         sys.exit(1)
 
-    html_path = sys.argv[1]
+    html_path = args[0]
     if not os.path.exists(html_path):
         print(f"File not found: {html_path}")
         sys.exit(1)
 
     dotenv_values = parse_env_file(ENV_PATH)
     accounts = gather_accounts(dotenv_values)
+
+    if to_filter:
+        accounts = [a for a in accounts if any(addr.lower() in to_filter for addr in a["to"])]
+        if not accounts:
+            print(f"email skipped, no configured account matches --to {', '.join(sorted(to_filter))}")
+            sys.exit(0)
 
     if not accounts:
         print("email skipped, set RESEND_API_KEY + EMAIL_TO")
