@@ -3,9 +3,12 @@ report_gui.py
 
 A manual, on-demand control panel for the premarket report pipeline, sitting
 alongside run_daily.py's automated Task Scheduler run rather than replacing
-it. Two buttons, generate today's daily report or the current week's
-summary, each saved locally as HTML + PDF under reports/, plus a checkbox
-per known recipient and a Send button to email whichever one you want.
+it. Two buttons, generate today's daily report or a weekly summary, each
+saved locally as HTML + PDF under reports/, plus a checkbox per known
+recipient and a Send button to email whichever one you want. Generating a
+weekly summary opens a selection dialog first, listing every archived daily
+report that's actually available (any week, not just the current one),
+pre-checked, so you can deselect any before generating.
 
 Doesn't reimplement any pipeline logic, it calls the same scripts run_daily.py
 already calls (scan.py, claude_analyst.py, stage2_scan.py,
@@ -29,7 +32,7 @@ from tkinter import ttk
 from zoneinfo import ZoneInfo
 
 from render_report import output_prefix
-from weekly_summary import archive_day, week_folder_name
+from weekly_summary import archive_day, week_folder_name, list_available_daily_reports
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -254,23 +257,69 @@ class ReportGUI:
     def start_weekly(self):
         if self.busy:
             return
-        self.set_busy(True)
-        threading.Thread(target=self._weekly_worker, daemon=True).start()
+        available = list_available_daily_reports()
+        if not available:
+            self.log("No archived daily reports with an AI report found yet, generate a Daily Report first")
+            return
+        self._open_weekly_selection_dialog(available)
 
-    def _weekly_worker(self):
+    def _open_weekly_selection_dialog(self, available_dates):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Select Daily Reports")
+        dialog.geometry("320x380")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text="Daily reports to include (all suggested, ctrl/shift-click to adjust):",
+            wraplength=290,
+        ).pack(anchor=tk.W, padx=10, pady=(10, 6))
+
+        list_container = ttk.Frame(dialog)
+        list_container.pack(fill=tk.BOTH, expand=True, padx=10)
+        listbox = tk.Listbox(list_container, selectmode=tk.EXTENDED, exportselection=False)
+        scrollbar = ttk.Scrollbar(list_container, command=listbox.yview)
+        listbox.configure(yscrollcommand=scrollbar.set)
+        for date_str in available_dates:
+            listbox.insert(tk.END, date_str)
+        listbox.select_set(0, tk.END)
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
+        ttk.Button(
+            btn_frame,
+            text="Generate",
+            command=lambda: self._confirm_weekly_selection(dialog, listbox, available_dates),
+        ).pack(side=tk.RIGHT, padx=(0, 8))
+
+    def _confirm_weekly_selection(self, dialog, listbox, available_dates):
+        selected_dates = [available_dates[i] for i in listbox.curselection()]
+        dialog.destroy()
+        if not selected_dates:
+            self.log("No daily reports selected, weekly summary not generated")
+            return
+        self.set_busy(True)
+        threading.Thread(target=self._weekly_worker, args=(selected_dates,), daemon=True).start()
+
+    def _weekly_worker(self, selected_dates):
         try:
             now = datetime.now(ET)
             date_str = now.strftime("%Y-%m-%d")
             weekly_md = os.path.join("weekly_archive", week_folder_name(now), "WEEKLY_SUMMARY.md")
 
             before = os.path.getmtime(weekly_md) if os.path.exists(weekly_md) else None
-            if not self.run_cmd([PY, "weekly_summary.py"], "weekly_summary.py"):
+            cmd = [PY, "weekly_summary.py", "--days", ",".join(selected_dates)]
+            if not self.run_cmd(cmd, "weekly_summary.py"):
                 self.log("weekly_summary.py failed, stopping")
                 return
             after = os.path.getmtime(weekly_md) if os.path.exists(weekly_md) else None
 
             if not (os.path.exists(weekly_md) and after != before):
-                self.log("No weekly summary written (no archived daily reports this week yet, or Claude CLI not logged in)")
+                self.log("No weekly summary written (Claude CLI not logged in, or none of the selected days had a report)")
                 return
 
             if not self.run_cmd([PY, "render_report.py", weekly_md, date_str], "render weekly summary"):
