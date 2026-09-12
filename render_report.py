@@ -200,12 +200,46 @@ body {
     margin: 40px 0 28px;
 }
 
+.highlight-section {
+    background: #fff8e1;
+    border: 2px solid #e8b923;
+    border-radius: 10px;
+    padding: 18px 22px 20px;
+    margin: 32px 0;
+}
+
+.highlight-section h2 {
+    margin: 0 0 12px 0 !important;
+    padding-top: 0 !important;
+    border-top: none !important;
+    color: #8a6300;
+}
+
 @media (max-width: 640px) {
     .page {
         padding: 24px 20px;
     }
 }
 """
+
+
+HIGHLIGHTED_HEADINGS = ["Swing Trade Candidates (1-2 Month Outlook)"]
+
+
+def highlight_sections(body_html):
+    """Wrap specific H2 sections in a highlighted box so they stand out on the
+    page, currently just the weekly summary's swing trade candidates, easy to
+    miss since it's always the last section before the closing disclaimer.
+    Wraps from that <h2> up to (not including) the next <h2>, <hr>, or the end
+    of the content, whichever comes first.
+    """
+    for heading in HIGHLIGHTED_HEADINGS:
+        pattern = re.compile(
+            r"(<h2>" + re.escape(heading) + r"</h2>.*?)(?=<h2>|<hr\s*/?>|$)",
+            re.DOTALL,
+        )
+        body_html = pattern.sub(lambda m: f'<div class="highlight-section">{m.group(1)}</div>', body_html, count=1)
+    return body_html
 
 
 def split_title(md_text):
@@ -233,6 +267,7 @@ def build_html(md_text, date_str, generated_str):
         body_md,
         extensions=["tables", "fenced_code", "sane_lists"],
     )
+    body_html = highlight_sections(body_html)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -271,6 +306,7 @@ def build_combined_html(md_paths, date_str, generated_str):
             body_md,
             extensions=["tables", "fenced_code", "sane_lists"],
         )
+        body_html = highlight_sections(body_html)
         divider = '<hr class="section-break" />' if i > 0 else ""
         sections.append(
             f'{divider}<section class="report-section">'
