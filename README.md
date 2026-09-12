@@ -147,6 +147,18 @@ whichever report was just generated to whichever boxes are checked, via
 `deliver.py --to`. A progress log at the bottom shows what's happening,
 since the AI analyst step can take a minute or two.
 
+Generate Weekly Summary opens a selection dialog first, listing every
+archived daily report that actually has an AI-written REPORT.md (across all
+weeks, not just the current one), pre-checked so you can just hit Generate,
+or deselect any you don't want included. This is `weekly_summary.py --days`
+under the hood, see its docstring.
+
+`report_gui.py` must be run through the project's own venv, running the bare
+`.py` file directly (double-clicking it, or its raw path in a terminal)
+invokes the system-wide Python instead and fails with `ModuleNotFoundError`.
+Use the command above, or double-click **`Run Report GUI.bat`** in the
+project folder, which launches it through the venv for you.
+
 ## Setup
 
 You need Python 3.10 or newer, and Node.js (for the Claude Code CLI, only
