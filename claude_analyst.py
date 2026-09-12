@@ -71,27 +71,49 @@ def logged_in(cli):
         return False
 
 
-def ask_claude(cli, prompt_text, label):
-    try:
-        result = subprocess.run(
-            [cli, "-p", "--model", MODEL, "--tools", ""],
-            input=prompt_text,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"{label} timed out after {TIMEOUT_SECONDS}s") from e
+ASK_CLAUDE_ATTEMPTS = 2
 
-    if result.returncode != 0:
-        raise RuntimeError(f"{label} failed (exit {result.returncode}): {result.stderr.strip()[:500]}")
 
-    output = result.stdout.strip()
-    if not output:
-        raise RuntimeError(f"{label} returned no output, stderr: {result.stderr.strip()[:500]}")
+def ask_claude(cli, prompt_text, label, expected_prefix=None):
+    """Run one headless Claude pass. expected_prefix, if given, is a sanity check on
+    the response (e.g. "# Weekly Premarket Summary") since --tools "" occasionally
+    doesn't stop the model from narrating a fake tool call as plain text instead of
+    actually answering, seen once with a longer, more open-ended prompt. One retry
+    on a mismatch before giving up, rather than silently writing garbage to a report
+    file no one's watching in the unattended runs.
+    """
+    last_output = None
+    for attempt in range(1, ASK_CLAUDE_ATTEMPTS + 1):
+        try:
+            result = subprocess.run(
+                [cli, "-p", "--model", MODEL, "--tools", ""],
+                input=prompt_text,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(f"{label} timed out after {TIMEOUT_SECONDS}s") from e
 
-    return output
+        if result.returncode != 0:
+            raise RuntimeError(f"{label} failed (exit {result.returncode}): {result.stderr.strip()[:500]}")
+
+        output = result.stdout.strip()
+        if not output:
+            raise RuntimeError(f"{label} returned no output, stderr: {result.stderr.strip()[:500]}")
+
+        if expected_prefix is None or output.startswith(expected_prefix):
+            return output
+
+        last_output = output
+        if attempt < ASK_CLAUDE_ATTEMPTS:
+            print(f"{label} didn't return the expected format on attempt {attempt}, retrying...")
+
+    raise RuntimeError(
+        f"{label} did not return the expected format after {ASK_CLAUDE_ATTEMPTS} attempts, "
+        f"got: {last_output[:300]!r}"
+    )
 
 
 def main():
@@ -116,7 +138,7 @@ def main():
     print("=== Claude analyst pass ===")
     analyst_input = f"{prompt_claude}\n\n=== INPUT: packet.json ===\n{packet_json}"
     try:
-        claude_view = ask_claude(cli, analyst_input, "Analyst pass")
+        claude_view = ask_claude(cli, analyst_input, "Analyst pass", expected_prefix="#")
     except Exception as e:
         print(f"{e}")
         sys.exit(1)
@@ -139,7 +161,7 @@ def main():
         f"follow your instructions for when the Codex pass is unavailable)\n"
     )
     try:
-        report = ask_claude(cli, merge_input, "Merge pass")
+        report = ask_claude(cli, merge_input, "Merge pass", expected_prefix="# 🧠 AI PREMARKET REPORT")
     except Exception as e:
         print(f"{e}")
         sys.exit(1)

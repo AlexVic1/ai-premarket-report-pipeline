@@ -172,7 +172,7 @@ def main():
     )
 
     try:
-        summary = ask_claude(cli, prompt_input, "Weekly summary pass")
+        summary = ask_claude(cli, prompt_input, "Weekly summary pass", expected_prefix="# Weekly Premarket Summary")
     except Exception as e:
         print(f"{e}")
         sys.exit(1)

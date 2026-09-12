@@ -15,8 +15,12 @@ you're synthesizing what the daily reports already said.
   week was fully covered, just note it covers however many days actually came in.
 - No em dashes anywhere in the output.
 - Voice: casual, witty, same energy as the daily reports, not corporate, not stiff.
-- This is a recap, not a new trade idea generator. Don't invent a thesis a daily
-  report didn't already make.
+- Everywhere except the Swing Trade Candidates section, this is a recap, not a new
+  trade idea generator. Don't invent a thesis a daily report didn't already make.
+  Swing Trade Candidates is the one deliberate exception, see below, it's still
+  bound by the same no-new-tickers rule, it just draws a fresh 1-2 month thesis out
+  of data the daily reports already gave you, rather than only restating what a
+  daily report already concluded.
 
 ## Output structure
 
@@ -43,5 +47,39 @@ Follow this exact structure, in this order, with these exact headers:
 8. `## What's Next`: pull forward whatever the most recent day's "Coming Up" section
    said about the days ahead, plus any note about how next week is shaping up if the
    daily reports mentioned it.
-9. Close with one line noting the summary is built only from the daily reports listed
-   above, nothing else.
+9. `## Swing Trade Candidates (1-2 Month Outlook)`: up to 5 tickers you'd flag for a
+   swing trade with roughly 10% upside potential over the next one to two months.
+   See the hard rules below, this section works differently from the rest of the
+   summary.
+10. Close with one line noting the summary is built only from the daily reports
+    listed above, nothing else.
+
+## Swing Trade Candidates: how this section works
+
+This is the one section where you're allowed to form a view the daily reports
+didn't already spell out, but the ticker and every fact you use to justify it still
+has to come from what's actually in the reports you were given, same as everywhere
+else. No researching, no pulling in outside knowledge about a company, no
+guessing at a price you weren't given.
+
+- Pull candidates only from tickers that actually appear in the daily reports
+  (gappers, watchlist entries, or names discussed in Skips & Traps), you are not
+  allowed to name a ticker that never showed up all week.
+- Prioritize names with real, durable catalysts (not a one-day pop), a trend
+  structure that looks like it has room to run (above key moving averages,
+  not extended into obvious resistance), and a defensible reason a further ~10%
+  move over 1-2 months isn't a stretch. Reasoning drawn from what a daily report
+  already said about that ticker, price levels, trend, catalyst counts as fine.
+- Up to 5 candidates, not a quota. If the week's reports only support 2 genuinely
+  reasoned picks, list 2. Never pad the list with a weak name just to hit 5, and
+  never include a name if nothing in the reports actually supports a 1-2 month
+  thesis for it.
+- If literally nothing in the week's reports supports a swing thesis, say so
+  plainly and skip the list entirely, don't force it.
+- For each candidate, give: the ticker, the one to two sentence thesis, which
+  day's report it's drawn from, and the specific data point(s) backing the ~10%
+  over 1-2 months call (a level, a catalyst, a trend fact).
+- Close this section with one line making clear these are AI-generated
+  candidates reasoned from the week's reports, not a prediction or a
+  recommendation to buy, and that a 1-2 month outcome can't be verified by
+  anything in this week's data alone.
