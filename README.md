@@ -38,9 +38,10 @@ no API key of any kind.
 - Runs an independent Claude analyst pass over that data and writes it up in a
   readable report, on top of (not instead of) the rule based picks. Requires
   the Pro/Max subscription above, skips itself cleanly if that's not set up.
-- Renders any of these into a clean HTML page, saved locally under `reports/`.
-  PDF export (`html_to_pdf.py`, via headless Chromium) and email delivery
-  (`deliver.py`, via Resend) both exist and work but aren't run automatically.
+- Renders any of these into a clean HTML page plus a PDF (`html_to_pdf.py`, via
+  headless Chromium/Edge), saved locally under `reports/`, emails it to one
+  recipient (`deliver.py`, via Resend), and pops a Windows notification when
+  the run finishes, see "Automatic daily summary" below.
 - Runs unattended on a schedule: weekdays only, works even when you're not
   logged into the machine, and waits out a dead internet connection instead of
   just failing silently.
@@ -68,13 +69,11 @@ render_report.py          turns one or several markdown reports into a clean,
 
 html_to_pdf.py            converts a rendered HTML report to PDF with headless
                           Chromium (Playwright), pixel identical to the HTML.
-                          Not run automatically by run_daily.py (see below),
-                          works standalone if you want a PDF copy
+                          Run by run_daily.py for the daily PDF
 
 deliver.py                 emails a rendered HTML report (plus PDF) via Resend,
-                          supports multiple recipients and multiple accounts.
-                          Not run automatically by run_daily.py (see below),
-                          works standalone if you want email back
+                          supports multiple recipients and multiple accounts,
+                          run by run_daily.py with --to for one recipient
 
 weekly_summary.py         archives each day's reports into
                           weekly_archive/<week>/<date>/, and on Fridays
@@ -83,8 +82,9 @@ weekly_summary.py         archives each day's reports into
                           WEEKLY_SUMMARY.md, see below
 
 run_daily.py               the full unattended chain: scan, Claude analyst,
-                          both mechanical reports, render, save HTML locally,
-                          weekly archive (plus weekly summary on Fridays),
+                          both mechanical reports, render, PDF, email, weekly
+                          archive (plus weekly summary on Fridays), status
+                          file + notification (notify.py),
                           all logged to logs/run_daily_<date>.log. Weekdays
                           only, waits for a lost internet connection to come
                           back
@@ -125,6 +125,39 @@ rendered and saved as its own HTML page under `reports/`, same as the daily one.
 
 Run it by hand any time with `.venv\Scripts\python.exe weekly_summary.py`, it
 just picks up whatever's archived for the current week so far.
+
+## Automatic daily summary, PDF, email and notification
+
+`run_daily.py` (fired by the `PremarketDailyReports` scheduled task, weekdays)
+scans, runs the analyst and both screens, saves the report as HTML **and PDF**
+under `reports/`, archives it in `weekly_archive/`, **emails it to one
+recipient** (`EMAIL_RECIPIENT` in `run_daily.py`, sent with `deliver.py --to`),
+and finally shows a **Windows notification** saying how it went (all good, or
+what was missing: no AI section, PDF failed, email failed). Clicking the toast
+opens the PDF.
+
+The notification needs its own scheduled task. The daily task runs "whether
+user is logged on or not", a background session with no desktop, so it can't
+show a toast itself. It writes `logs/last_run_status.json` and starts a second
+task, `PremarketNotifier` ("only when user is logged on"), which runs
+`notify.py` in your own session. The notifier also runs at every logon, so a
+run that finished while you were signed out is announced when you sign in. Set
+it up once (PowerShell, from the project folder):
+
+```
+$dir = (Get-Location).Path
+$action = New-ScheduledTaskAction -Execute "$dir\.venv\Scripts\pythonw.exe" -Argument "notify.py" -WorkingDirectory $dir
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName "PremarketNotifier" -Action $action -Trigger $trigger -Principal $principal -Settings $settings
+```
+
+`.venv\Scripts\python.exe notify.py --test` shows a test toast. A toast can
+only appear while someone is logged in, and the whole run can't happen while
+the PC is off or asleep. The GUI has an on/off checkbox for the automatic run.
+Test switches for `run_daily.py`: `--force` (ignore the weekend gate) and
+`--no-email`.
 
 ## GUI control panel
 

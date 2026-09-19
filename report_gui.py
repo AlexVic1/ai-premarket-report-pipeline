@@ -50,6 +50,9 @@ MECHANICAL_REPORTS = [
 
 EMAIL_OPTIONS = ["afire12@gmail.com", "ykalifa@gmail.com"]
 
+AUTO_TASK = "PremarketDailyReports"
+CREATE_NO_WINDOW = 0x08000000
+
 CHILD_ENV = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
 
 
@@ -89,6 +92,14 @@ class ReportGUI:
         ttk.Button(
             shortcuts, text="Open Reports Folder", command=self.open_reports_folder
         ).pack(side=tk.LEFT)
+
+        self.auto_var = tk.BooleanVar(value=self.auto_task_enabled())
+        ttk.Checkbutton(
+            shortcuts,
+            text="Automatic daily summary (weekdays 10:00, PDF + email to Yoel + notification)",
+            variable=self.auto_var,
+            command=self.toggle_auto,
+        ).pack(side=tk.LEFT, padx=(16, 0))
 
         log_frame = ttk.Frame(self.root, padding=(10, 0, 10, 10))
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -413,6 +424,28 @@ class ReportGUI:
             return
         self.log(f"Opening {path}")
         os.startfile(path)
+
+    def auto_task_enabled(self):
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", f"(Get-ScheduledTask -TaskName '{AUTO_TASK}').State"],
+                capture_output=True, text=True, timeout=30, creationflags=CREATE_NO_WINDOW,
+            )
+            return result.stdout.strip() in ("Ready", "Running")
+        except Exception:
+            return False
+
+    def toggle_auto(self):
+        want = self.auto_var.get()
+        result = subprocess.run(
+            ["schtasks", "/change", "/tn", AUTO_TASK, "/enable" if want else "/disable"],
+            capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+        )
+        if result.returncode != 0:
+            self.log(f"Could not {'enable' if want else 'disable'} the automatic run: {(result.stderr or result.stdout).strip()}")
+        else:
+            self.log(f"Automatic daily summary {'ENABLED' if want else 'DISABLED'}")
+        self.auto_var.set(self.auto_task_enabled())
 
     def open_reports_folder(self):
         reports_dir = os.path.join(HERE, "reports")
