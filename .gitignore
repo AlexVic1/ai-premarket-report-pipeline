@@ -22,3 +22,5 @@ FINVIZ_SECTOR_SCAN_REPORT.md
 reports/
 logs/
 weekly_archive/
+factor_screener/results/
+factor_screener/cache/
